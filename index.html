@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Palette Generator</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #000;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 2rem;
+    overflow-x: hidden;
+  }
+
+  /* Video background */
+  .video-bg {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .video-bg video {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+
+  /* Content on top */
+  .content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 300;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+  }
+
+  .palette {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .swatch {
+    width: 140px;
+    height: 180px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 12px;
+    font-size: 0.85rem;
+    font-family: monospace;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    position: relative;
+  }
+  .swatch:hover { transform: scale(1.05); box-shadow: 0 8px 30px rgba(0,0,0,0.4); }
+  .swatch .copied {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.7);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .swatch .copied.show { opacity: 1; }
+
+  button {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.9);
+    padding: 0.7rem 2rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+    transition: background 0.2s, border-color 0.2s;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  button:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.4); }
+
+  .hint { font-size: 0.8rem; color: rgba(255,255,255,0.3); }
+
+  .credit { font-size: 0.85rem; color: rgba(255,255,255,0.4); margin-top: 1rem; }
+  .credit a {
+    text-decoration: none;
+    background: linear-gradient(90deg, #ff0000, #ff8800, #ffff00, #00cc00, #0088ff, #8800ff, #ff0088);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    background-size: 200% 100%;
+    animation: rainbow 3s linear infinite;
+    font-weight: 600;
+  }
+  .credit .heart {
+    display: inline-block;
+    animation: rainbow-heart 3s linear infinite;
+    -webkit-text-fill-color: initial;
+  }
+  @keyframes rainbow {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+  }
+  @keyframes rainbow-heart {
+    0% { color: #ff0000; } 16% { color: #ff8800; } 33% { color: #ffff00; }
+    50% { color: #00cc00; } 66% { color: #0088ff; } 83% { color: #8800ff; } 100% { color: #ff0000; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Video Background -->
+<div class="video-bg">
+  <video id="bgVideo" autoplay loop muted playsinline></video>
+</div>
+
+<!-- Content -->
+<div class="content">
+  <h1>Palette Generator</h1>
+  <div id="palette" class="palette"></div>
+  <button onclick="generatePalette()">Generate</button>
+  <p class="hint">click a swatch to copy its hex code &middot; press spacebar to generate</p>
+  <p class="credit">Made <span class="heart">❤️</span> by <a href="https://x.com/Aiman_Asril" target="_blank">EmanLutfy</a></p>
+</div>
+
+<script>
+// ── HLS Video ──
+(function() {
+  const video = document.getElementById('bgVideo');
+  const src = "https://stream.mux.com/9JXDljEVWYwWu01PUkAemafDugK89o01BR6zqJ3aS9u00A.m3u8";
+  if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = src;
+  } else if (window.Hls && Hls.isSupported()) {
+    const hls = new Hls();
+    hls.loadSource(src);
+    hls.attachMedia(video);
+  }
+})();
+
+// ── Palette Generator ──
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function generatePalette() {
+  const palette = document.getElementById('palette');
+  palette.innerHTML = '';
+  const baseHue = Math.random() * 360;
+  const harmony = ['analogous', 'triadic', 'complementary', 'split'][Math.floor(Math.random() * 4)];
+
+  const hues = [];
+  for (let i = 0; i < 4; i++) {
+    if (harmony === 'analogous') hues.push((baseHue + i * 30) % 360);
+    else if (harmony === 'triadic') hues.push((baseHue + i * 72) % 360);
+    else if (harmony === 'complementary') hues.push((baseHue + i * 36 + (i >= 3 ? 180 : 0)) % 360);
+    else hues.push((baseHue + i * 60 + Math.random() * 20 - 10) % 360);
+  }
+
+  hues.forEach(h => {
+    const s = 50 + Math.random() * 40;
+    const l = 35 + Math.random() * 35;
+    const hex = hslToHex(h, s, l);
+
+    const div = document.createElement('div');
+    div.className = 'swatch';
+    div.style.background = hex;
+    div.innerHTML = `${hex}<span class="copied">copied!</span>`;
+    div.onclick = () => {
+      navigator.clipboard.writeText(hex);
+      const msg = div.querySelector('.copied');
+      msg.classList.add('show');
+      setTimeout(() => msg.classList.remove('show'), 800);
+    };
+    palette.appendChild(div);
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target === document.body) {
+    e.preventDefault();
+    generatePalette();
+  }
+});
+
+generatePalette();
+</script>
+</body>
+</html>
